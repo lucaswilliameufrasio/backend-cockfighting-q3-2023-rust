@@ -43,7 +43,7 @@ services:
 
   # API - instância 01 (Rust, imagem ghcr.io)
   api1:
-    image: ghcr.io/lucaswilliameufrasio/backend-cockfighting-q3-2023-rust:5ab544fea399499d5949b8247d00f5cff4f4ae7f
+    image: ghcr.io/lucaswilliameufrasio/backend-cockfighting-q3-2023-rust:86b3bbdce0b4bb7dba363fcd4b48afcef634f95e
     hostname: api1
     restart: on-failure
     environment:
@@ -72,7 +72,7 @@ services:
 
   # API - instância 02 (Rust, imagem ghcr.io)
   api2:
-    image: ghcr.io/lucaswilliameufrasio/backend-cockfighting-q3-2023-rust:5ab544fea399499d5949b8247d00f5cff4f4ae7f
+    image: ghcr.io/lucaswilliameufrasio/backend-cockfighting-q3-2023-rust:86b3bbdce0b4bb7dba363fcd4b48afcef634f95e
     hostname: api2
     restart: on-failure
     environment:
