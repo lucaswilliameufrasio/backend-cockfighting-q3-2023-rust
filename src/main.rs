@@ -136,7 +136,13 @@ async fn handle_create(
     req: Request<Incoming>,
     db: &Pool,
 ) -> Result<Response<String>, hyper::Error> {
-    let body_bytes = req.collect().await.map(|c| c.to_bytes()).unwrap_or_default();
+    let body_bytes = match req.collect().await {
+        Ok(c) => c.to_bytes(),
+        Err(e) => {
+            eprintln!("body collect error: {:?}", e);
+            return Ok(error_response(StatusCode::BAD_REQUEST, "Body read error"));
+        }
+    };
 
     let input: CreatePerson = match serde_json::from_slice(&body_bytes) {
         Ok(v) => v,
@@ -170,13 +176,17 @@ async fn handle_create(
     }
 
     let id = Uuid::now_v7();
-
     let stack_val: Vec<String> = input.stack.clone().unwrap_or_default();
 
-    let result = db
-        .get()
-        .await
-        .unwrap()
+    let client = match db.get().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("pool error: {:?}", e);
+            return Ok(error_response(StatusCode::SERVICE_UNAVAILABLE, "DB pool error"));
+        }
+    };
+
+    let result = client
         .execute(
             "INSERT INTO people (id, nickname, name, birth_date, stack) VALUES ($1, $2, $3, TO_DATE($4, 'YYYY-MM-DD'), $5) ON CONFLICT (nickname) DO NOTHING",
             &[&id, &input.apelido, &input.nome, &input.nascimento, &stack_val],
@@ -197,8 +207,8 @@ async fn handle_create(
         }
         Ok(_) => Ok(error_response(StatusCode::UNPROCESSABLE_ENTITY, "Conflict")),
         Err(e) => {
-            eprintln!("DB error: {:?}", e);
-            Ok(error_response(StatusCode::UNPROCESSABLE_ENTITY, &format!("DB error: {}", e)))
+            eprintln!("insert error: {:?}", e);
+            Ok(error_response(StatusCode::SERVICE_UNAVAILABLE, "DB error"))
         }
     }
 }
@@ -212,13 +222,24 @@ async fn handle_get_by_id(id: &str, db: &Pool) -> Result<Response<String>, hyper
         Err(_) => return Ok(error_response(StatusCode::NOT_FOUND, "Not found")),
     };
 
-    let row = db
-        .get()
-        .await
-        .unwrap()
+    let client = match db.get().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("pool error: {:?}", e);
+            return Ok(error_response(StatusCode::SERVICE_UNAVAILABLE, "DB pool error"));
+        }
+    };
+
+    let row = match client
         .query_opt("SELECT id, nickname, name, birth_date::text, stack FROM people WHERE id = $1", &[&uuid])
         .await
-        .unwrap();
+    {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("query error: {:?}", e);
+            return Ok(error_response(StatusCode::SERVICE_UNAVAILABLE, "DB error"));
+        }
+    };
 
     match row {
         Some(r) => {
@@ -241,16 +262,27 @@ async fn handle_search(
 ) -> Result<Response<String>, hyper::Error> {
     let pattern = format!("%{}%", term);
 
-    let rows = db
-        .get()
-        .await
-        .unwrap()
+    let client = match db.get().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("pool error: {:?}", e);
+            return Ok(error_response(StatusCode::SERVICE_UNAVAILABLE, "DB pool error"));
+        }
+    };
+
+    let rows = match client
         .query(
             "SELECT id, nickname, name, birth_date::text, stack FROM people WHERE searchable LIKE $1 LIMIT 50",
             &[&pattern],
         )
         .await
-        .unwrap();
+    {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("search error: {:?}", e);
+            return Ok(error_response(StatusCode::SERVICE_UNAVAILABLE, "DB error"));
+        }
+    };
 
     let people: Vec<Person> = rows
         .iter()
@@ -267,13 +299,24 @@ async fn handle_search(
 }
 
 async fn handle_count(db: &Pool) -> Result<Response<String>, hyper::Error> {
-    let row = db
-        .get()
-        .await
-        .unwrap()
+    let client = match db.get().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("pool error: {:?}", e);
+            return Ok(error_response(StatusCode::SERVICE_UNAVAILABLE, "DB pool error"));
+        }
+    };
+
+    let row = match client
         .query_one("SELECT COUNT(*) AS count FROM people", &[])
         .await
-        .unwrap();
+    {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("count error: {:?}", e);
+            return Ok(error_response(StatusCode::SERVICE_UNAVAILABLE, "DB error"));
+        }
+    };
 
     let count: i64 = row.get(0);
     Ok(json_response(
