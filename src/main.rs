@@ -429,3 +429,62 @@ async fn main() {
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_date_valid_valid() {
+        assert!(is_date_valid("1990-01-01"));
+        assert!(is_date_valid("2024-02-29"));
+        assert!(is_date_valid("2000-02-29"));
+        assert!(is_date_valid("1800-01-01"));
+        assert!(is_date_valid("9999-12-31"));
+    }
+
+    #[test]
+    fn test_is_date_valid_invalid() {
+        assert!(!is_date_valid(""));
+        assert!(!is_date_valid("not-a-date"));
+        assert!(!is_date_valid("1990-13-01"));
+        assert!(!is_date_valid("1990-00-01"));
+        assert!(!is_date_valid("1990-01-32"));
+        assert!(!is_date_valid("2023-02-29"));
+        assert!(!is_date_valid("1900-02-29"));
+        assert!(!is_date_valid("1990-04-31"));
+        assert!(!is_date_valid("1799-01-01"));
+        assert!(!is_date_valid("10000-01-01"));
+        assert!(!is_date_valid("1990/01/01"));
+        assert!(!is_date_valid("99-01-01"));
+        assert!(!is_date_valid("1990-1-1"));
+    }
+
+    #[test]
+    fn test_url_params_empty() {
+        let params = url_params("");
+        assert!(params.is_empty());
+    }
+
+    #[test]
+    fn test_url_params_single() {
+        let params = url_params("t=search");
+        assert_eq!(params.get("t").unwrap(), "search");
+    }
+
+    #[test]
+    fn test_url_params_multiple() {
+        let params = url_params("t=hello&p=world");
+        assert_eq!(params.get("t").unwrap(), "hello");
+        assert_eq!(params.get("p").unwrap(), "world");
+    }
+
+    #[test]
+    fn test_url_decode() {
+        assert_eq!(url_decode("hello%20world"), "hello world");
+        assert_eq!(url_decode("a%2Fb"), "a/b");
+        assert_eq!(url_decode("hello+world"), "hello world");
+        assert_eq!(url_decode("simple"), "simple");
+        assert_eq!(url_decode(""), "");
+    }
+}
