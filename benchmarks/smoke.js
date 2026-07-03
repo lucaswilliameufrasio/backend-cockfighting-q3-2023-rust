@@ -9,7 +9,7 @@ export const options = {
   },
 };
 
-const BASE = __ENV.BASE_URL || 'http://localhost:9999';
+const BASE = __ENV.BASE_URL || 'http://localhost:8080';
 
 export default function () {
   const payload = JSON.stringify({
