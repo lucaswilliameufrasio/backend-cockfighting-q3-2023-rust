@@ -102,7 +102,7 @@ async fn handle_request(
     let query = req.uri().query().unwrap_or("");
 
     match (method, path) {
-        (&Method::GET, "/health-check") => Ok(empty_response(StatusCode::OK)),
+        (&Method::GET, "/health-check") => handle_health(&state.db).await,
 
         (&Method::POST, "/pessoas") => handle_create(req, &state.db).await,
 
@@ -280,6 +280,22 @@ async fn handle_count(db: &Pool) -> Result<Response<String>, hyper::Error> {
         StatusCode::OK,
         &serde_json::json!({ "count": count }),
     ))
+}
+
+async fn handle_health(db: &Pool) -> Result<Response<String>, hyper::Error> {
+    match db.get().await {
+        Ok(client) => match client.query_one("SELECT 1", &[]).await {
+            Ok(_) => Ok(empty_response(StatusCode::OK)),
+            Err(e) => {
+                eprintln!("health db error: {:?}", e);
+                Ok(empty_response(StatusCode::SERVICE_UNAVAILABLE))
+            }
+        },
+        Err(e) => {
+            eprintln!("health pool error: {:?}", e);
+            Ok(empty_response(StatusCode::SERVICE_UNAVAILABLE))
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
