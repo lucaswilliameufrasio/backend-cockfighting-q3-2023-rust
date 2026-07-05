@@ -243,12 +243,13 @@ async fn handle_get_by_id(id: &str, db: &Pool) -> Result<Response<String>, hyper
 
     match row {
         Some(r) => {
+            let stack: Option<Vec<String>> = r.get(4);
             let p = Person {
                 id: r.get(0),
                 apelido: r.get(1),
                 nome: r.get(2),
                 nascimento: r.get(3),
-                stack: r.get(4),
+                stack: stack.filter(|v| !v.is_empty()),
             };
             Ok(json_response(StatusCode::OK, &p))
         }
@@ -272,7 +273,7 @@ async fn handle_search(
 
     let rows = match client
         .query(
-            "SELECT id, nickname, name, birth_date::text, stack FROM people WHERE searchable LIKE $1 LIMIT 50",
+            "SELECT id, nickname, name, birth_date::text, stack FROM people WHERE searchable ILIKE $1 LIMIT 50",
             &[&pattern],
         )
         .await
@@ -286,12 +287,15 @@ async fn handle_search(
 
     let people: Vec<Person> = rows
         .iter()
-        .map(|r| Person {
-            id: r.get(0),
-            apelido: r.get(1),
-            nome: r.get(2),
-            nascimento: r.get(3),
-            stack: r.get(4),
+        .map(|r| {
+            let stack: Option<Vec<String>> = r.get(4);
+            Person {
+                id: r.get(0),
+                apelido: r.get(1),
+                nome: r.get(2),
+                nascimento: r.get(3),
+                stack: stack.filter(|v| !v.is_empty()),
+            }
         })
         .collect();
 
@@ -319,10 +323,7 @@ async fn handle_count(db: &Pool) -> Result<Response<String>, hyper::Error> {
     };
 
     let count: i64 = row.get(0);
-    Ok(json_response(
-        StatusCode::OK,
-        &serde_json::json!({ "count": count }),
-    ))
+    Ok(Response::new(count.to_string()))
 }
 
 async fn handle_health(db: &Pool) -> Result<Response<String>, hyper::Error> {
