@@ -214,6 +214,7 @@ fn test_search() {
 fn test_count() {
     let resp = get("/contagem-pessoas");
     assert_eq!(resp.status(), 200);
-    let json: serde_json::Value = resp.json().unwrap();
-    assert!(json.get("count").is_some());
+    let body = resp.text().unwrap();
+    assert!(!body.is_empty());
+    assert!(body.trim().parse::<i64>().is_ok());
 }
