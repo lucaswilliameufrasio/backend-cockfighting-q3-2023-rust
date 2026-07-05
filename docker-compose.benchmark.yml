@@ -43,7 +43,7 @@ services:
 
   # API - instância 01 (Rust, imagem ghcr.io)
   api1:
-    image: ghcr.io/lucaswilliameufrasio/backend-cockfighting-q3-2023-rust:86b3bbdce0b4bb7dba363fcd4b48afcef634f95e
+    image: ghcr.io/lucaswilliameufrasio/backend-cockfighting-q3-2023-rust:bc1a5a63f0796dbe092ff4cba0c59652982f02b3
     hostname: api1
     restart: on-failure
     environment:
@@ -72,7 +72,7 @@ services:
 
   # API - instância 02 (Rust, imagem ghcr.io)
   api2:
-    image: ghcr.io/lucaswilliameufrasio/backend-cockfighting-q3-2023-rust:86b3bbdce0b4bb7dba363fcd4b48afcef634f95e
+    image: ghcr.io/lucaswilliameufrasio/backend-cockfighting-q3-2023-rust:bc1a5a63f0796dbe092ff4cba0c59652982f02b3
     hostname: api2
     restart: on-failure
     environment:
@@ -101,7 +101,7 @@ services:
 
   # Load Balancer (Pingora Rust, imagem ghcr.io)
   lb:
-    image: ghcr.io/lucaswilliameufrasio/backend-cockfighting-q3-2023-lb:fec5b5e187a2bb275533bc521bfa0564fca564dd
+    image: ghcr.io/lucaswilliameufrasio/backend-cockfighting-q3-2023-lb:62e0f7b25bf8325d7acacf470f269cd15570dd7d
     hostname: lb
     restart: unless-stopped
     environment:
