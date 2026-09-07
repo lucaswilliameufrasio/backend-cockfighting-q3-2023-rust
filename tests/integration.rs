@@ -8,6 +8,16 @@ use std::time::Duration;
 
 static COMPOSE: OnceLock<()> = OnceLock::new();
 
+static BASE_URL: OnceLock<String> = OnceLock::new();
+
+fn base_url() -> &'static str {
+    BASE_URL.get_or_init(|| {
+        std::env::var("TEST_API_PORT")
+            .map(|p| format!("http://localhost:{p}"))
+            .unwrap_or_else(|_| "http://localhost:8080".to_string())
+    })
+}
+
 fn ensure_compose() {
     COMPOSE.get_or_init(|| {
         // clean up any leftover
@@ -29,7 +39,7 @@ fn ensure_compose() {
 
         for i in 0..30 {
             let Ok(resp) = client
-                .get("http://localhost:8080/health-check")
+                .get(&format!("{}/health-check", base_url()))
                 .send()
             else {
                 eprintln!("Waiting for API... attempt {}", i + 1);
@@ -38,7 +48,7 @@ fn ensure_compose() {
             };
             if resp.status().is_success() {
                 eprintln!("API is ready!");
-                return ();
+                return;
             }
             eprintln!("Waiting for API... attempt {} (status: {})", i + 1, resp.status());
             std::thread::sleep(Duration::from_secs(2));
@@ -54,7 +64,7 @@ fn get(path: &str) -> reqwest::blocking::Response {
         .build()
         .unwrap();
     client
-        .get(&format!("http://localhost:8080{}", path))
+        .get(&format!("{}{}", base_url(), path))
         .send()
         .expect("GET request failed")
 }
@@ -66,7 +76,7 @@ fn post(path: &str, body: &str) -> reqwest::blocking::Response {
         .build()
         .unwrap();
     client
-        .post(&format!("http://localhost:8080{}", path))
+        .post(&format!("{}{}", base_url(), path))
         .header("Content-Type", "application/json")
         .body(body.to_string())
         .send()
@@ -141,7 +151,7 @@ fn test_create_person_invalid() {
         .build()
         .unwrap();
     let resp = client
-        .post("http://localhost:8080/pessoas")
+        .post(&format!("{}/pessoas", base_url()))
         .header("Content-Type", "application/json")
         .body("not json")
         .send()
@@ -204,7 +214,7 @@ fn test_search() {
         .build()
         .unwrap();
     let resp = client
-        .get("http://localhost:8080/pessoas")
+        .get(&format!("{}/pessoas", base_url()))
         .send()
         .unwrap();
     assert_eq!(resp.status(), 400);
