@@ -1,12 +1,12 @@
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use deadpool_postgres::{Config, ManagerConfig, Pool, RecyclingMethod, Runtime};
+use deadpool_postgres::{Config, ManagerConfig, Pool, PoolConfig, RecyclingMethod, Runtime};
 use http_body_util::BodyExt;
 use hyper::body::Incoming;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
+use hyper::header::HeaderValue;
 use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
 use serde::{Deserialize, Serialize};
@@ -48,14 +48,17 @@ struct AppState {
 // Helpers
 // ---------------------------------------------------------------------------
 
+#[global_allocator]
+static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+static JSON_CONTENT_TYPE: HeaderValue = HeaderValue::from_static("application/json");
+
 fn json_response<T: Serialize>(status: StatusCode, body: &T) -> Response<String> {
     let json = serde_json::to_string(body).unwrap();
     let mut resp = Response::new(json);
     *resp.status_mut() = status;
-    resp.headers_mut().insert(
-        hyper::header::CONTENT_TYPE,
-        "application/json".parse().unwrap(),
-    );
+    resp.headers_mut()
+        .insert(hyper::header::CONTENT_TYPE, JSON_CONTENT_TYPE.clone());
     resp
 }
 
@@ -65,8 +68,16 @@ fn empty_response(status: StatusCode) -> Response<String> {
     resp
 }
 
-fn error_response(status: StatusCode, msg: &str) -> Response<String> {
-    json_response(status, &serde_json::json!({ "message": msg }))
+fn error_response(status: StatusCode, msg: &'static str) -> Response<String> {
+    let mut body = String::with_capacity(msg.len() + 14);
+    body.push_str("{\"message\":\"");
+    body.push_str(msg);
+    body.push_str("\"}");
+    let mut resp = Response::new(body);
+    *resp.status_mut() = status;
+    resp.headers_mut()
+        .insert(hyper::header::CONTENT_TYPE, JSON_CONTENT_TYPE.clone());
+    resp
 }
 
 fn is_date_valid(date: &str) -> bool {
@@ -111,13 +122,10 @@ async fn handle_request(
             handle_get_by_id(id, &state.db).await
         }
 
-        (&Method::GET, "/pessoas") => {
-            let params: HashMap<_, _> = url_params(query);
-            match params.get("t") {
-                Some(term) => handle_search(term, &state.db).await,
-                None => Ok(error_response(StatusCode::BAD_REQUEST, "Missing term")),
-            }
-        }
+        (&Method::GET, "/pessoas") => match extract_term(query) {
+            Some(term) => handle_search(&term, &state.db).await,
+            None => Ok(error_response(StatusCode::BAD_REQUEST, "Missing term")),
+        },
 
         (&Method::GET, "/contagem-pessoas") => handle_count(&state.db).await,
 
@@ -186,9 +194,11 @@ async fn handle_create(
         }
     };
 
+    let sql = "INSERT INTO people (id, nickname, name, birth_date, stack) VALUES ($1, $2, $3, TO_DATE($4, 'YYYY-MM-DD'), $5) ON CONFLICT (nickname) DO NOTHING";
+    let _ = client.prepare_cached(sql).await;
     let result = client
         .execute(
-            "INSERT INTO people (id, nickname, name, birth_date, stack) VALUES ($1, $2, $3, TO_DATE($4, 'YYYY-MM-DD'), $5) ON CONFLICT (nickname) DO NOTHING",
+            sql,
             &[&id, &input.apelido, &input.nome, &input.nascimento, &stack_val],
         )
         .await;
@@ -230,8 +240,10 @@ async fn handle_get_by_id(id: &str, db: &Pool) -> Result<Response<String>, hyper
         }
     };
 
+    let sql = "SELECT id, nickname, name, birth_date::text, stack FROM people WHERE id = $1";
+    let _ = client.prepare_cached(sql).await;
     let row = match client
-        .query_opt("SELECT id, nickname, name, birth_date::text, stack FROM people WHERE id = $1", &[&uuid])
+        .query_opt(sql, &[&uuid])
         .await
     {
         Ok(r) => r,
@@ -271,9 +283,11 @@ async fn handle_search(
         }
     };
 
+    let sql = "SELECT id, nickname, name, birth_date::text, stack FROM people WHERE searchable ILIKE $1 LIMIT 50";
+    let _ = client.prepare_cached(sql).await;
     let rows = match client
         .query(
-            "SELECT id, nickname, name, birth_date::text, stack FROM people WHERE searchable ILIKE $1 LIMIT 50",
+            sql,
             &[&pattern],
         )
         .await
@@ -311,8 +325,10 @@ async fn handle_count(db: &Pool) -> Result<Response<String>, hyper::Error> {
         }
     };
 
+    let sql = "SELECT COUNT(*) AS count FROM people";
+    let _ = client.prepare_cached(sql).await;
     let row = match client
-        .query_one("SELECT COUNT(*) AS count FROM people", &[])
+        .query_one(sql, &[])
         .await
     {
         Ok(r) => r,
@@ -346,14 +362,15 @@ async fn handle_health(db: &Pool) -> Result<Response<String>, hyper::Error> {
 // Util
 // ---------------------------------------------------------------------------
 
-fn url_params(query: &str) -> HashMap<String, String> {
-    let mut map = HashMap::new();
+fn extract_term(query: &str) -> Option<String> {
     for pair in query.split('&') {
         if let Some((k, v)) = pair.split_once('=') {
-            map.insert(k.to_string(), url_decode(v));
+            if k == "t" {
+                return Some(url_decode(v));
+            }
         }
     }
-    map
+    None
 }
 
 fn url_decode(s: &str) -> String {
@@ -393,12 +410,21 @@ async fn main() {
     let db_user = std::env::var("DB_USER").unwrap_or_else(|_| "postgres".into());
     let db_password = std::env::var("DB_PASSWORD").unwrap_or_else(|_| "fight".into());
 
+    let db_max_connections: usize = std::env::var("DB_MAX_CONNECTIONS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(16);
+
     let mut cfg = Config::new();
     cfg.host = Some(db_host);
     cfg.port = Some(db_port);
     cfg.dbname = Some(db_name);
     cfg.user = Some(db_user);
     cfg.password = Some(db_password);
+    cfg.pool = Some(PoolConfig {
+        max_size: db_max_connections,
+        ..Default::default()
+    });
     cfg.manager = Some(ManagerConfig {
         recycling_method: RecyclingMethod::Fast,
     });
@@ -416,6 +442,7 @@ async fn main() {
 
     loop {
         let (stream, _) = listener.accept().await.unwrap();
+        let _ = stream.set_nodelay(true);
         let io = TokioIo::new(stream);
         let state = state.clone();
 
@@ -462,22 +489,16 @@ mod tests {
     }
 
     #[test]
-    fn test_url_params_empty() {
-        let params = url_params("");
-        assert!(params.is_empty());
+    fn test_extract_term_found() {
+        assert_eq!(extract_term("t=search"), Some("search".to_string()));
+        assert_eq!(extract_term("t=hello&p=world"), Some("hello".to_string()));
+        assert_eq!(extract_term("p=world&t=hello"), Some("hello".to_string()));
     }
 
     #[test]
-    fn test_url_params_single() {
-        let params = url_params("t=search");
-        assert_eq!(params.get("t").unwrap(), "search");
-    }
-
-    #[test]
-    fn test_url_params_multiple() {
-        let params = url_params("t=hello&p=world");
-        assert_eq!(params.get("t").unwrap(), "hello");
-        assert_eq!(params.get("p").unwrap(), "world");
+    fn test_extract_term_missing() {
+        assert_eq!(extract_term(""), None);
+        assert_eq!(extract_term("p=world"), None);
     }
 
     #[test]
