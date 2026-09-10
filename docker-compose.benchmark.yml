@@ -15,7 +15,8 @@ services:
       "-c", "maintenance_work_mem=115200kB",
       "-c", "effective_cache_size=1350MB",
       "-c", "wal_buffers=13824kB",
-      "-c", "checkpoint_timeout=10min",
+      "-c", "checkpoint_timeout=30min",
+      "-c", "max_wal_size=4GB",
       "-c", "checkpoint_completion_target=0.9",
       "-c", "random_page_cost=1.1",
       "-c", "effective_io_concurrency=200",
@@ -38,9 +39,10 @@ services:
           cpus: '0.85'
           memory: '1.8GB'
 
-  # API - instância 01 (Rust, imagem ghcr.io)
+  # API - instância 01 (Rust, build da branch)
   api1:
-    image: ghcr.io/lucaswilliameufrasio/backend-cockfighting-q3-2023-rust:latest
+    build: .
+    image: backend-cockfighting-rust:benchmark
     hostname: api1
     restart: on-failure
     environment:
@@ -67,9 +69,10 @@ services:
           cpus: '0.25'
           memory: '0.4GB'
 
-  # API - instância 02 (Rust, imagem ghcr.io)
+  # API - instância 02 (Rust, build da branch)
   api2:
-    image: ghcr.io/lucaswilliameufrasio/backend-cockfighting-q3-2023-rust:latest
+    build: .
+    image: backend-cockfighting-rust:benchmark
     hostname: api2
     restart: on-failure
     environment:
